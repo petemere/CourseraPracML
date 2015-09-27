@@ -1,0 +1,102 @@
+---
+title: "Coursera Practical Machine Learning"
+author: "Peter Mere"
+date: "September 28, 2015"
+output: html_document
+---
+
+
+#Introduction
+In a study (http://groupware.les.inf.puc-rio.br/work.jsf?p1=11201) by Velloso et al., six participants were asked to perform barbell lifts correctly and incorrectly in five different ways.  The goal of this project is to build a prediction model on data taken from accelerometers attached to the belt, forearm, arm, and dumbell of the participants, and predict *how* they were lifting.
+
+#Data
+The training data are available here: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project comes from this source: http://groupware.les.inf.puc-rio.br/har.
+
+#Procedure
+1. Load and examine the data.
+2. Remove unnecessary variables.
+3. Split the data into training and validation sets.
+4. Train a random forest model on the training set.
+5. Predict the lift type for validation set records and examine the error.
+6. Predict the lift type for test set records and submit the predictions on-line.
+
+It should be noted that as we are using random forest there is little point centering or scaling the data.
+
+#1. Load and examine the data.
+Download the training and test data.
+
+``` {r gettingData}
+trainingSet_full <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",
+                        na.strings = c("NA","#DIV/0!",""))
+
+testSet <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",
+                    na.strings = c("NA","#DIV/0!",""))
+```
+
+
+#2. Remove unnecessary variables
+##NA values
+```{r NAs, fig.width = 3, fig.height = 3}
+NAfrac <- sapply(names(trainingSet_full), function(x) sum(is.na(trainingSet_full[,x]))/dim(trainingSet_full)[1])
+hist(NAfrac)
+```
+The histogram above shows that the variables are either nearly all NAs, or nearly all data.  Drop the variables that are mostly NAs.
+```{r dropNAs}
+trainingSet_full <- trainingSet_full[,NAfrac<0.5]
+```
+
+##Irrelevant
+It is clear from the variable names that the first seven are irrelevant (i.e. not accelerometer data), and they should be removed.
+```{r dropIrrelevant}
+names(trainingSet_full)[1:7]
+trainingSet_full <- trainingSet_full[,-(1:7)]
+```
+
+##Near zero variance
+```{r dropNearZeroVar}
+library(caret)
+isNZV <- nearZeroVar(trainingSet_full, saveMetrics = T)
+sum(isNZV$nzv==TRUE)
+```
+There are no near zero variance variables left, so nothing to remove.
+
+#3. Split the data into training and validation sets.
+We will keep 20% of the training data aside in order to estimate the out of sample error for the model.
+```{r validationSplit}
+set.seed(465)
+inTrain = createDataPartition(trainingSet_full$classe, p = 0.8, list=FALSE)
+trainingSet = trainingSet_full[inTrain,]
+valdtnSet = trainingSet_full[-inTrain,]
+```
+
+#4. Train a random forest model on the training set.
+Random forest is a very powerful categorisation machine learning method.  However, it can take a long time to create a model, so we will trim some parameters in order to minimise the processing overhead.
+```{r trainRF}
+set.seed(987)
+library(randomForest)
+modelRF <- randomForest(classe ~ ., data=trainingSet, ntree=50, mtry=7, importance=TRUE, proximity=TRUE)
+modelRF  # A summary.
+```
+
+This shows that the estimated out-of-bag error rate is estimated at 0.62%, which should be similar to the out of sample error rate.
+
+
+#5. Predict the lift type for validation set records and examine the error.
+```{r predictValidation}
+valPred <- predict(modelRF, valdtnSet)
+confMat <- confusionMatrix(valPred,valdtnSet$classe)
+confMat
+```
+Here the accuracy is 0.9959, so the out-of-sample error estimate is 0.41%, which is close enough to the first estimate.
+
+#6. Predict the lift type for test set records and submit the predictions on-line.
+```{r predictTest}
+testPred <- predict(modelRF, testSet)
+testPred
+```
+These predictions scored 100% on submission.
+
